@@ -6,13 +6,17 @@ FastAPI proxy + AI Agent
 import os
 import json
 import asyncio
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
 import httpx
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+
+DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 from pydantic import BaseModel
 
 # ─── Config ────────────────────────────────────────────────────────────────
@@ -302,3 +306,24 @@ async def agent_chat(req: AgentRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "Raqamli Bozor Dashboard API"}
+
+
+# ─── Frontend Static Files ────────────────────────────────────────────────
+# Must be AFTER all /api/* routes so they take priority.
+
+if DIST_DIR.exists():
+    # Serve /assets, /favicon.svg, etc. directly
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        # Specific file in dist (e.g. favicon.svg)?
+        candidate = DIST_DIR / full_path
+        if candidate.is_file():
+            return FileResponse(str(candidate))
+        # Anything else → React index.html (client-side routing)
+        return FileResponse(str(DIST_DIR / "index.html"))
+else:
+    @app.get("/", include_in_schema=False)
+    async def no_build():
+        return {"detail": "Frontend not built. Run: cd frontend && npm run build"}

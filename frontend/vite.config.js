@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  // Dev mode: proxy /api to backend (npm run dev)
   server: {
     port: 5173,
     proxy: {
@@ -11,5 +12,10 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  // Production build → FastAPI serves dist/
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
   }
 })
