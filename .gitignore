@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pyc
+*.Python
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+.pyc
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
+*.cover
+*.log
+.pytest_cache/
+.env
+.env.*
+.venv/
+venv/
+
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+coverage/
+
+# Environment variables
+.env
+.env.*
+
+# Production
+npm-packages/
+
+# Misc
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# MacOS
+.AppleDouble
+.LSOverride
+
+# Temporary
+tmp/
+temp/
+
+# Optional npm cache directory
+.npm
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Parcel cache
+.cache/
+
+# Next.js build output
+.next/
+
+# Gatsby files
+.cache/
+public/
+
+# React Native
+.expo/
+
+# Storybook
+.out/
+
+# Mac system files
+.DS_Store
+
