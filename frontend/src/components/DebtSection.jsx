@@ -60,7 +60,7 @@ export default function DebtSection({ filters }) {
       </div>
 
       <div className="card bg-base-100 shadow-sm border border-base-200 p-5">
-        <p className="text-sm font-semibold text-neutral mb-4">Qarz taqsimoti (UZS)</p>
+        <p className="text-sm font-semibold text-base-content mb-4">Qarz taqsimoti (UZS)</p>
         {isLoading ? (
           <div className="skeleton h-48 w-full" />
         ) : (

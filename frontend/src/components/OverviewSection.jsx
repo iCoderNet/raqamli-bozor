@@ -1,69 +1,77 @@
 import React from 'react'
-import {
-  Store, ShoppingBag, Tent, TrendingUp, AlertCircle, Car, Users
-} from 'lucide-react'
+import { Store, ShoppingBag, Tent, TrendingUp, AlertCircle, Car, Users } from 'lucide-react'
 import StatCard, { fmt, fmtSum } from './StatCard'
-import { useOverview } from '../hooks/useDashboard'
+import { useOverview, useShops, useStalls, useOpenTrade } from '../hooks/useDashboard'
 
 export default function OverviewSection({ filters }) {
-  const { data, isLoading } = useOverview(filters)
-  const d = data || {}
+  const { data: ov,  isLoading: loadOv } = useOverview(filters)
+  // "Jami Savdo Joylari" — use filtered data so it changes per market
+  const { data: sh,  isLoading: loadSh } = useShops(filters)
+  const { data: st,  isLoading: loadSt } = useStalls(filters)
+  const { data: ot,  isLoading: loadOt } = useOpenTrade(filters)
+
+  const o = ov || {}
+  const loading = loadOv || loadSh || loadSt || loadOt
+
+  // Totals from filtered endpoints
+  const totalPlaces  = (sh?.total_shops || 0) + (st?.total_stalls || 0) + (ot?.total_open_trade_places || 0)
+  const activePlaces = (sh?.active_shops || 0) + (st?.active_stalls || 0) + (ot?.active_open_trade_places || 0)
 
   const cards = [
     {
-      icon: <Store size={20} />,
+      icon:  <Store size={20} />,
       label: 'Jami Savdo Joylari',
-      value: fmt((d.total_shops || 0) + (d.total_stalls || 0) + (d.total_open_trade_places || 0)),
-      sub: `Aktiv: ${fmt((d.active_shops||0) + (d.active_stalls||0) + (d.active_open_trade_places||0))}`,
+      value: fmt(totalPlaces),
+      sub:   `Aktiv: ${fmt(activePlaces)}`,
       color: 'primary',
     },
     {
-      icon: <TrendingUp size={20} />,
+      icon:  <TrendingUp size={20} />,
       label: 'Umumiy Daromad',
-      value: fmtSum(d.total_revenue),
-      sub: 'UZS',
+      value: fmtSum(o.total_revenue),
+      sub:   'UZS',
       color: 'success',
     },
     {
-      icon: <AlertCircle size={20} />,
+      icon:  <AlertCircle size={20} />,
       label: 'Umumiy Qarz',
-      value: fmtSum(d.total_debt_amount),
-      sub: `Qarzdorlar: ${fmt(d.debtors_count)}`,
+      value: fmtSum(o.total_debt_amount),
+      sub:   `Qarzdorlar: ${fmt(o.debtors_count)}`,
       color: 'error',
     },
     {
-      icon: <Car size={20} />,
+      icon:  <Car size={20} />,
       label: 'Transport Kirish',
-      value: fmt(d.vehicle_entries_count),
-      sub: `Daromad: ${fmtSum(d.vehicle_entries_revenue)}`,
+      value: fmt(o.vehicle_entries_count),
+      sub:   `Daromad: ${fmtSum(o.vehicle_entries_revenue)}`,
       color: 'accent',
     },
     {
-      icon: <Store size={20} />,
+      icon:  <Store size={20} />,
       label: 'Magazinlar',
-      value: fmt(d.total_shops),
-      sub: `Aktiv: ${fmt(d.active_shops)}`,
+      value: fmt(sh?.total_shops),
+      sub:   `Aktiv: ${fmt(sh?.active_shops)}`,
       color: 'primary',
     },
     {
-      icon: <ShoppingBag size={20} />,
+      icon:  <ShoppingBag size={20} />,
       label: 'Rastalar',
-      value: fmt(d.total_stalls),
-      sub: `Aktiv: ${fmt(d.active_stalls)}`,
+      value: fmt(st?.total_stalls),
+      sub:   `Aktiv: ${fmt(st?.active_stalls)}`,
       color: 'secondary',
     },
     {
-      icon: <Tent size={20} />,
+      icon:  <Tent size={20} />,
       label: 'Ochiq Savdo',
-      value: fmt(d.total_open_trade_places),
-      sub: `Aktiv: ${fmt(d.active_open_trade_places)}`,
+      value: fmt(ot?.total_open_trade_places),
+      sub:   `Aktiv: ${fmt(ot?.active_open_trade_places)}`,
       color: 'accent',
     },
     {
-      icon: <Users size={20} />,
+      icon:  <Users size={20} />,
       label: 'Qarzdorlar Soni',
-      value: fmt(d.debtors_count),
-      sub: 'Jami qarzdorlar',
+      value: fmt(o.debtors_count),
+      sub:   'Jami qarzdorlar',
       color: 'warning',
     },
   ]
@@ -75,8 +83,8 @@ export default function OverviewSection({ filters }) {
         Umumiy Ko'rsatkichlar
       </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {cards.map((c) => (
-          <StatCard key={c.label} {...c} loading={isLoading} />
+        {cards.map(c => (
+          <StatCard key={c.label} {...c} loading={loading} />
         ))}
       </div>
     </section>
