@@ -1,5 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { dashboardApi } from '../api/client'
+import api from '../api/client'
+
+export function useCacheStatus() {
+  return useQuery({
+    queryKey: ['cacheStatus'],
+    queryFn: () => api.get('/cache/status').then(r => r.data),
+    refetchInterval: 60_000,   // check every minute
+    staleTime: 30_000,
+  })
+}
 
 export function useFilters() {
   return useQuery({

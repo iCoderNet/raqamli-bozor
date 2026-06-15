@@ -1,9 +1,9 @@
 import React, { useState } from 'react'
-import { RefreshCw, BarChart3, Sun, Moon, LogOut, User } from 'lucide-react'
+import { RefreshCw, BarChart3, Sun, Moon, LogOut, User, Database } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 
-import { useFilters, useOverview } from './hooks/useDashboard'
+import { useFilters, useCacheStatus } from './hooks/useDashboard'
 import Login           from './components/Login'
 import OverviewSection from './components/OverviewSection'
 import TradeSection    from './components/TradeSection'
@@ -91,6 +91,9 @@ export default function App() {
 
           {/* Market */}
           <MarketSelect marketId={marketId} onChange={setMarketId} />
+
+          {/* Cache status */}
+          <CacheIndicator />
 
           {/* Refresh */}
           <button onClick={() => qc.invalidateQueries()}
@@ -185,4 +188,41 @@ function MarketTitle({ marketId }) {
   if (!marketId) return 'Barcha Bozorlar'
   const market = data?.markets?.find(m => m.id === marketId)
   return market?.name || 'Bozor'
+}
+
+function CacheIndicator() {
+  const { data, isLoading } = useCacheStatus()
+
+  const total   = data?.total                 // number or undefined
+  const ageSec  = data?.last_entry_age_s      // number or null/undefined
+  const running = data?.sync?.running  ?? false
+  const lastOk  = data?.sync?.last_ok  ?? null
+  const lastErr = data?.sync?.last_err ?? null
+
+  let color   = 'text-base-content/25'
+  let tooltip = 'Cache holati yuklanmoqda...'
+
+  if (running) {
+    color   = 'text-warning animate-pulse'
+    tooltip = 'Sync ishlayapti...'
+  } else if (total > 0 && ageSec != null) {
+    const min = Math.floor(ageSec / 60)
+    color   = ageSec < 900 ? 'text-success' : 'text-warning'
+    tooltip = `Cache: ${min} daqiqa oldin yangilangan (${total} ta)`
+  } else if (lastErr) {
+    color   = 'text-error'
+    tooltip = `Sync xatosi: ${String(lastErr).slice(0, 80)}`
+  } else if (lastOk) {
+    color   = 'text-warning'
+    tooltip = `Sync: ${lastOk} — hech narsa keshlanmadi`
+  } else if (total === 0) {
+    color   = 'text-base-content/25'
+    tooltip = 'Birinchi sync kutilmoqda...'
+  }
+
+  return (
+    <div className={`tooltip tooltip-bottom ${color}`} data-tip={tooltip}>
+      <Database size={15} />
+    </div>
+  )
 }

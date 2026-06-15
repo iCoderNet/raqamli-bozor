@@ -32,10 +32,10 @@ def init_db():
             created_at    TEXT    DEFAULT (datetime('now'))
         )
     """)
-    # Default admin account (admin / Admin1234!)
+    # Default admin account (admin / 12345678)
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
-        _insert_user(c, "admin", "Admin1234!", "Administrator", "admin")
+        _insert_user(c, "admin", "12345678", "Administrator", "admin")
     conn.commit()
     conn.close()
 

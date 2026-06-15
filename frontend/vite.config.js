@@ -16,6 +16,6 @@ export default defineConfig({
   // Production build → FastAPI serves dist/
   build: {
     outDir: 'dist',
-    emptyOutDir: true,
+    emptyOutDir: false,
   }
 })
