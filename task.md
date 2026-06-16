@@ -1,0 +1,5 @@
+- [x] API docs o'qish va arxitektura tanlash
+- [x] backend/main.py — Jahon Bozor proxy + routing + sync qo'shish
+- [x] backend/.env — JAHON_* env o'zgaruvchilar qo'shish
+- [x] Tekshirish: filters endpoint Jahon Bozorni qaytaradi
+- [x] Tekshirish: routing mantig'i to'g'ri ishlaydi

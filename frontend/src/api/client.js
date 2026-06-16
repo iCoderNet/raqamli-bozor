@@ -36,8 +36,9 @@ export const authApi = {
 
 // ─── Dashboard API ────────────────────────────────────────────────────────
 
+// market_id string yoki number bo'lishi mumkin (masalan: 'jahon_main' yoki 123)
 const buildParams = ({ marketId, year, month, ...rest } = {}) => ({
-  ...(marketId != null ? { market_id: marketId } : {}),
+  ...(marketId != null && marketId !== '' ? { market_id: marketId } : {}),
   ...(year    != null ? { year }                : {}),
   ...(month   != null ? { month }               : {}),
   ...rest,

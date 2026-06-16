@@ -172,7 +172,13 @@ function MarketSelect({ marketId, onChange }) {
     <select
       className="select select-bordered select-sm min-w-[11rem] font-medium"
       value={marketId ?? ''}
-      onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}
+      onChange={e => {
+        const val = e.target.value
+        // '' → null (barcha bozorlar), raqam → Number, boshqa → string ('jahon_main')
+        if (!val) return onChange(null)
+        const asNum = Number(val)
+        onChange(isNaN(asNum) ? val : asNum)
+      }}
       disabled={isLoading}
     >
       <option value="">🏪 Barcha bozorlar</option>
