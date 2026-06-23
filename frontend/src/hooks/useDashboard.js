@@ -15,7 +15,7 @@ export function useFilters() {
   return useQuery({
     queryKey: ['filters'],
     queryFn: dashboardApi.getFilters,
-    staleTime: Infinity,
+    staleTime: 60_000,   // 1 daqiqa — toggle qilingandan keyin refetch bo'lsin
   })
 }
 

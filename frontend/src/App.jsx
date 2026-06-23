@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { RefreshCw, BarChart3, Sun, Moon, LogOut, User, Database } from 'lucide-react'
+import { RefreshCw, BarChart3, Sun, Moon, LogOut, User, Database, ShieldCheck } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 
@@ -11,6 +11,7 @@ import DebtSection     from './components/DebtSection'
 import VehicleSection  from './components/VehicleSection'
 import TopDebtorsTable from './components/TopDebtorsTable'
 import AgentChat       from './components/AgentChat'
+import SuperadminPage  from './components/SuperadminPage'
 
 const MONTHS = ['', 'Yanvar','Fevral','Mart','Aprel','May','Iyun',
                     'Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr']
@@ -26,25 +27,40 @@ function getSavedUser() {
 
 // ─── Main App ──────────────────────────────────────────────────────────────
 export default function App() {
-  const [user,     setUser]     = useState(getSavedUser)
+  const savedUser = getSavedUser()
+
+  const [user,     setUser]     = useState(savedUser)
   const [theme,    setTheme]    = useState('raqamli')
   const [marketId, setMarketId] = useState(null)
   const [year,     setYear]     = useState(now.year())
   const [month,    setMonth]    = useState(now.month() + 1)
+
+  // page: 'dashboard' | 'superadmin'
+  const [page, setPage] = useState(
+    savedUser?.role === 'superadmin' ? 'superadmin' : 'dashboard'
+  )
 
   const qc = useQueryClient()
   const filters = { marketId, year, month }
 
   // ─── Login gate ────────────────────────────────────────────────────────
   if (!user) {
-    return <Login onLogin={u => setUser(u)} />
+    return (
+      <Login
+        onLogin={u => {
+          setUser(u)
+          setPage(u.role === 'superadmin' ? 'superadmin' : 'dashboard')
+        }}
+      />
+    )
   }
 
-  // ─── Handlers ──────────────────────────────────────────────────────────
+  // ─── Shared handlers ───────────────────────────────────────────────────
   function logout() {
     sessionStorage.removeItem('token')
     sessionStorage.removeItem('user')
     setUser(null)
+    setPage('dashboard')
     qc.clear()
   }
 
@@ -54,6 +70,20 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
+  // ─── Superadmin page ───────────────────────────────────────────────────
+  if (page === 'superadmin') {
+    return (
+      <SuperadminPage
+        user={user}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onGoToDashboard={() => setPage('dashboard')}
+        onLogout={logout}
+      />
+    )
+  }
+
+  // ─── Dashboard ─────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-base-100">
 
@@ -106,6 +136,18 @@ export default function App() {
             className="btn btn-ghost btn-sm btn-square" title="Tema">
             {theme === 'raqamli' ? <Moon size={15} /> : <Sun size={15} />}
           </button>
+
+          {/* Superadmin page link */}
+          {user.role === 'superadmin' && (
+            <button
+              onClick={() => setPage('superadmin')}
+              className="btn btn-ghost btn-sm gap-1.5 text-primary"
+              title="Superadmin Panel"
+            >
+              <ShieldCheck size={15} />
+              <span className="hidden lg:inline text-xs">Admin</span>
+            </button>
+          )}
 
           {/* User menu */}
           <div className="dropdown dropdown-end">
@@ -174,7 +216,6 @@ function MarketSelect({ marketId, onChange }) {
       value={marketId ?? ''}
       onChange={e => {
         const val = e.target.value
-        // '' → null (barcha bozorlar), raqam → Number, boshqa → string ('jahon_main')
         if (!val) return onChange(null)
         const asNum = Number(val)
         onChange(isNaN(asNum) ? val : asNum)
@@ -197,10 +238,10 @@ function MarketTitle({ marketId }) {
 }
 
 function CacheIndicator() {
-  const { data, isLoading } = useCacheStatus()
+  const { data } = useCacheStatus()
 
-  const total   = data?.total                 // number or undefined
-  const ageSec  = data?.last_entry_age_s      // number or null/undefined
+  const total   = data?.total
+  const ageSec  = data?.last_entry_age_s
   const running = data?.sync?.running  ?? false
   const lastOk  = data?.sync?.last_ok  ?? null
   const lastErr = data?.sync?.last_err ?? null

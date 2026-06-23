@@ -32,10 +32,21 @@ def init_db():
             created_at    TEXT    DEFAULT (datetime('now'))
         )
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS market_settings (
+            market_id  TEXT PRIMARY KEY,
+            is_enabled INTEGER DEFAULT 1,
+            updated_at TEXT    DEFAULT (datetime('now'))
+        )
+    """)
     # Default admin account (admin / 12345678)
     c.execute("SELECT COUNT(*) FROM users")
     if c.fetchone()[0] == 0:
         _insert_user(c, "admin", "12345678", "Administrator", "admin")
+    # Default superadmin account (superadmin / superadmin123) — agar mavjud bo'lmasa
+    c.execute("SELECT COUNT(*) FROM users WHERE role = 'superadmin'")
+    if c.fetchone()[0] == 0:
+        _insert_user(c, "superadmin", "superadmin123", "Super Administrator", "superadmin")
     conn.commit()
     conn.close()
 
@@ -96,6 +107,32 @@ def change_password(user_id: int, new_password: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (_hash(new_password), user_id))
+    conn.commit()
+    conn.close()
+
+
+# ─── Market settings ──────────────────────────────────────────────────────
+
+def get_market_settings() -> dict:
+    """DB dagi market_settings ni {market_id: bool} ko'rinishida qaytaradi."""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT market_id, is_enabled FROM market_settings")
+    rows = c.fetchall()
+    conn.close()
+    return {r[0]: bool(r[1]) for r in rows}
+
+
+def set_market_enabled(market_id: str, is_enabled: bool):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO market_settings (market_id, is_enabled, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(market_id) DO UPDATE
+        SET is_enabled = excluded.is_enabled,
+            updated_at = excluded.updated_at
+    """, (str(market_id), int(is_enabled)))
     conn.commit()
     conn.close()
 

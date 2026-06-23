@@ -497,7 +497,7 @@ async def get_users(user: dict = Depends(require_auth)):
 
 @app.post("/api/auth/users")
 async def add_user(req: CreateUserRequest, user: dict = Depends(require_auth)):
-    if user.get("role") != "admin":
+    if user.get("role") not in ("admin", "superadmin"):
         raise HTTPException(status_code=403, detail="Faqat admin uchun")
     try:
         return _auth.create_user(req.username, req.password, req.full_name, req.role)
@@ -713,8 +713,52 @@ async def filters(_user: dict = Depends(require_auth)):
     """
     Barcha bozorlar ro'yxatini qaytaradi.
     Raqamli Bozor marketlari + Jahon Savdo Kompleksi (birlashtirilgan).
+    Faqat yoqilgan bozorlar qaytariladi (barcha rollar uchun).
+    Superadmin boshqaruvi uchun /api/admin/markets ishlatiladi.
     """
-    return await _serve("filters", {}, _ckey("filters"))
+    data = await _serve("filters", {}, _ckey("filters"))
+    if isinstance(data, dict):
+        settings = _auth.get_market_settings()
+        markets = data.get("markets", [])
+        enabled = [m for m in markets if settings.get(str(m.get("id") or ""), True)]
+        data = {**data, "markets": enabled}
+    return data
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SUPERADMIN — Market boshqaruvi
+# ═══════════════════════════════════════════════════════════════════════════
+
+class MarketToggleRequest(BaseModel):
+    is_enabled: bool
+
+
+@app.get("/api/admin/markets")
+async def admin_list_markets(user: dict = Depends(require_auth)):
+    """Barcha bozorlar + ularning yoqilgan/o'chirilgan holati (faqat superadmin)."""
+    if user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Faqat superadmin uchun")
+    data = await _serve("filters", {}, _ckey("filters"))
+    markets = data.get("markets", []) if isinstance(data, dict) else []
+    settings = _auth.get_market_settings()
+    return [
+        {**m, "is_enabled": settings.get(str(m.get("id") or ""), True)}
+        for m in markets
+    ]
+
+
+@app.put("/api/admin/markets/{market_id}/toggle")
+async def admin_toggle_market(
+    market_id: str,
+    req: MarketToggleRequest,
+    user: dict = Depends(require_auth),
+):
+    """Bozorni yoqish yoki o'chirish (faqat superadmin)."""
+    if user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Faqat superadmin uchun")
+    _auth.set_market_enabled(market_id, req.is_enabled)
+    log.info(f"Market {market_id} → {'enabled' if req.is_enabled else 'disabled'} by {user.get('sub')}")
+    return {"market_id": market_id, "is_enabled": req.is_enabled}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

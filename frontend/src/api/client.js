@@ -55,6 +55,15 @@ export const dashboardApi = {
   getVehicleEntries:(f)       => api.get('/dashboard/vehicle-entries',{ params: buildParams(f) }).then(r => r.data),
 }
 
+// ─── Admin API (superadmin only) ──────────────────────────────────────────
+
+export const adminApi = {
+  getMarkets: () =>
+    api.get('/admin/markets').then(r => r.data),
+  toggleMarket: (marketId, isEnabled) =>
+    api.put(`/admin/markets/${marketId}/toggle`, { is_enabled: isEnabled }).then(r => r.data),
+}
+
 // ─── Agent API ────────────────────────────────────────────────────────────
 
 export const agentApi = {
