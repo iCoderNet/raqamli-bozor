@@ -95,3 +95,4 @@ public/
 
 # Mac system files
 .DS_Store
+*.sqlite3
