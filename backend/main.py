@@ -804,6 +804,8 @@ JAVOB FORMATI:
 - Raqamlarni formatlang: 1 500 000 so'm kabi
 - Jadval, ro'yxat va bold (**) dan foydalaning
 - Qisqa va aniq bo'ling
+- TAVSIYALAR BERMANG: "Tavsiyalar", "Tavsiya", "Recommendations" bo'limlarini HECH QACHON qo'shmang
+- Faqat so'ralgan ma'lumotni bering, qo'shimcha maslahat yoki yo'l-yo'riq yozmang
 
 Quyida joriy dashboard ma'lumotlari keltirilgan — ularga asoslanib javob bering."""
 

@@ -298,8 +298,7 @@ export default function AgentChat({ marketId, year, month }) {
   const panel = (
     <>
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 rounded-t-2xl
-                      bg-gradient-to-r from-primary to-secondary text-primary-content flex-shrink-0">
+      <div className={`flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-primary to-secondary text-primary-content flex-shrink-0 ${fullscreen ? '' : 'rounded-t-2xl'}`}>
         <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
           <Bot size={18} />
         </div>
@@ -482,18 +481,10 @@ export default function AgentChat({ marketId, year, month }) {
         </div>
       )}
 
-      {/* Fullscreen modal */}
+      {/* Fullscreen — butun ekranni qoplaydi */}
       {open && fullscreen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 md:p-8"
-          onClick={e => { if (e.target === e.currentTarget) setFullscreen(false) }}
-        >
-          <div
-            className="w-full max-w-4xl bg-base-100 rounded-2xl shadow-2xl border border-base-200 flex flex-col"
-            style={{ height: '88vh' }}
-          >
-            {panel}
-          </div>
+        <div className="fixed inset-0 z-[60] flex flex-col bg-base-100">
+          {panel}
         </div>
       )}
     </>
