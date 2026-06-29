@@ -200,7 +200,7 @@ export default function App() {
         </footer>
       </main>
 
-      <AgentChat />
+      <AgentChat marketId={marketId} year={year} month={month} />
     </div>
   )
 }

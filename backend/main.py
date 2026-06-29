@@ -17,9 +17,9 @@ from typing import Optional, List, Any
 from datetime import date
 
 import httpx
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -68,6 +68,18 @@ LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 
 CACHE_MAX_AGE = int(os.getenv("CACHE_MAX_AGE", "1800"))   # 30 min
 SYNC_INTERVAL = int(os.getenv("SYNC_INTERVAL",  "1200"))  # 20 min
+
+# ─── Muxlisa AI (STT / TTS) config ────────────────────────────────────────
+MUXLISA_API_KEY  = os.getenv("MUXLISA_API_KEY",  "")
+MUXLISA_BASE_URL = "https://service.muxlisa.uz/api/v2"
+
+_ALLOWED_AUDIO_MIMES = {
+    "audio/mpeg", "audio/wav", "audio/x-wav", "audio/vnd.wav", "audio/wave",
+    "audio/ogg", "audio/flac", "audio/x-m4a", "audio/aac", "audio/mp4",
+    "audio/webm", "audio/3gpp", "audio/3gpp2", "audio/x-ms-wma", "audio/amr",
+    "video/webm",   # browser MediaRecorder ko'pincha shu tipni ishlatadi
+}
+_MAX_AUDIO_BYTES = 5 * 1024 * 1024   # 5 MB
 
 # ─── Raqamli Bozor Bearer token cache ─────────────────────────────────────
 _bazaar_token: dict = {"access": None}
@@ -733,6 +745,11 @@ class MarketToggleRequest(BaseModel):
     is_enabled: bool
 
 
+class TTSRequest(BaseModel):
+    text:    str
+    speaker: int = 1   # 0=ayol, 1=erkak
+
+
 @app.get("/api/admin/markets")
 async def admin_list_markets(user: dict = Depends(require_auth)):
     """Barcha bozorlar + ularning yoqilgan/o'chirilgan holati (faqat superadmin)."""
@@ -776,47 +793,105 @@ MUHIM XAVFSIZLIK QOIDALARI (buzib bo'lmaydi):
 - Faqat bozor statistikasi mavzusida gapiring; boshqa mavzularda: "Men faqat bozorlar bo'yicha yordam bera olaman" deng
 - Hech qachon siz AI ekanliningizni inkor etmang
 
+ALIFBO QOIDASI (MAJBURIY):
+- FAQAT O'ZBEK LOTIN ALIFBOSIDA YOZING.
+- Kirill harflaridan (А, Б, В, Г, Д, ...) MUTLAQO foydalanmang.
+- To'g'ri: "Ulug'nor bozori" — Noto'g'ri: "Улуғнор бозори"
+- Barcha so'zlar, nomlar va raqamlar faqat lotin harflarida bo'lsin.
+
 JAVOB FORMATI:
-- Uzbek tilida, professional va do'stona
+- O'zbek tilida, professional va do'stona
 - Raqamlarni formatlang: 1 500 000 so'm kabi
 - Jadval, ro'yxat va bold (**) dan foydalaning
 - Qisqa va aniq bo'ling
 
 Quyida joriy dashboard ma'lumotlari keltirilgan — ularga asoslanib javob bering."""
 
+_MONTHS_UZ = ['', 'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+               'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr']
 
-async def build_agent_context() -> dict:
+
+async def build_agent_context(
+    market_id: Optional[str] = None,
+    year:  Optional[int] = None,
+    month: Optional[int] = None,
+) -> tuple[dict, str]:
+    """
+    Kontekst ma'lumotlarini yuklaydi.
+    Qaytaradi: (ctx_dict, market_label)
+    """
     today = date.today()
-    y, m = today.year, today.month
+    y = year  or today.year
+    m = month or today.month
+
+    is_jahon = _is_jahon(market_id)
+
+    # ── Parametrlarni aniqlash ─────────────────────────────────────────────
+    if is_jahon:
+        base_p    = {"year": y, "month": m}
+        vehicle_p = {}
+        debtor_p  = {"limit": 20}
+        tin_key   = JAHON_TIN
+    elif market_id not in (None, ""):
+        try:
+            mid = int(market_id)
+        except (ValueError, TypeError):
+            mid = None
+        if mid:
+            base_p    = {"market_id": mid, "year": y, "month": m}
+            vehicle_p = {"market_id": mid}
+            debtor_p  = {"market_id": mid, "limit": 20}
+            tin_key   = str(mid)
+        else:
+            base_p    = {"year": y, "month": m}
+            vehicle_p = {}
+            debtor_p  = {"limit": 20}
+            tin_key   = None
+    else:
+        base_p    = {"year": y, "month": m}
+        vehicle_p = {}
+        debtor_p  = {"limit": 20}
+        tin_key   = None
 
     results = await asyncio.gather(
-        _serve("overview",        {"year": y, "month": m},  _ckey("overview",  year=y, month=m)),
-        _serve("filters",         {},                        _ckey("filters")),
-        _serve("debts",           {"year": y, "month": m},  _ckey("debts",     year=y, month=m)),
-        _serve("shops",           {"year": y, "month": m},  _ckey("shops",     year=y, month=m)),
-        _serve("stalls",          {"year": y, "month": m},  _ckey("stalls",    year=y, month=m)),
-        _serve("vehicle-entries", {},                        _ckey("vehicle-entries")),
-        _serve("top-debtors",     {"limit": 20},            _ckey("top-debtors", limit=50)),
+        _serve("overview",        base_p,    _ckey("overview",        tin=tin_key, year=y, month=m), is_jahon=is_jahon),
+        _serve("filters",         {},        _ckey("filters")),
+        _serve("debts",           base_p,    _ckey("debts",           tin=tin_key, year=y, month=m), is_jahon=is_jahon),
+        _serve("shops",           base_p,    _ckey("shops",           tin=tin_key, year=y, month=m), is_jahon=is_jahon),
+        _serve("stalls",          base_p,    _ckey("stalls",          tin=tin_key, year=y, month=m), is_jahon=is_jahon),
+        _serve("vehicle-entries", vehicle_p, _ckey("vehicle-entries", tin=tin_key),                  is_jahon=is_jahon),
+        _serve("top-debtors",     debtor_p,  _ckey("top-debtors",    tin=tin_key, limit=50),         is_jahon=is_jahon),
         return_exceptions=True,
     )
     labels = ["overview", "filters", "debts", "shops", "stalls", "vehicle_entries", "top_debtors"]
 
     ctx: dict = {}
+    market_label = "Barcha bozorlar"
+
     for label, r in zip(labels, results):
         if isinstance(r, Exception):
             ctx[label] = {}
         elif label == "filters" and isinstance(r, dict):
+            all_markets = r.get("markets", [])
             ctx["markets"] = [
                 {"name": mk.get("name"), "tin": mk.get("tin"),
                  "area": mk.get("area"), "sale_place": mk.get("sale_place")}
-                for mk in r.get("markets", [])
+                for mk in all_markets
             ]
+            # Tanlangan bozor nomini aniqlaymiz
+            if market_id:
+                found = next(
+                    (mk for mk in all_markets if str(mk.get("id") or mk.get("tin") or "") == str(market_id)),
+                    None
+                )
+                market_label = found["name"] if found else f"Bozor ({market_id})"
         elif label == "top_debtors":
             results_list = r.get("results", []) if isinstance(r, dict) else (r if isinstance(r, list) else [])
             ctx["top_debtors"] = {"results": results_list[:20]}
         else:
             ctx[label] = r
-    return ctx
+
+    return ctx, market_label
 
 
 class Message(BaseModel):
@@ -825,14 +900,24 @@ class Message(BaseModel):
 
 
 class AgentRequest(BaseModel):
-    messages: List[Message]
-    stream:   bool = False
+    messages:  List[Message]
+    stream:    bool         = False
+    market_id: Optional[str] = None
+    year:      Optional[int] = None
+    month:     Optional[int] = None
 
 
 @app.post("/api/agent/chat")
 async def agent_chat(req: AgentRequest, _user: dict = Depends(require_auth)):
-    ctx = await build_agent_context()
-    system_content = SYSTEM_PROMPT + f"\n\n```json\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n```"
+    ctx, market_label = await build_agent_context(req.market_id, req.year, req.month)
+
+    today = date.today()
+    y = req.year  or today.year
+    m = req.month or today.month
+    period = f"{_MONTHS_UZ[m]} {y}"
+
+    context_header = f"\n\n📍 Joriy ko'rinish: **{market_label}** | {period}\n"
+    system_content = SYSTEM_PROMPT + context_header + f"\n```json\n{json.dumps(ctx, ensure_ascii=False, indent=2)}\n```"
 
     messages = [{"role": "system", "content": system_content}]
     messages += [{"role": m.role, "content": m.content} for m in req.messages]
@@ -856,6 +941,109 @@ async def agent_chat(req: AgentRequest, _user: dict = Depends(require_auth)):
         return {"message": data["choices"][0]["message"]["content"]}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM xatosi: {exc}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  VOICE — Muxlisa AI STT / TTS proxy
+# ═══════════════════════════════════════════════════════════════════════════
+
+_EXT_MAP = {
+    "audio/wav": "wav", "audio/x-wav": "wav", "audio/vnd.wav": "wav",
+    "audio/wave": "wav", "audio/webm": "webm", "video/webm": "webm",
+    "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "mp4",
+    "audio/flac": "flac", "audio/aac": "aac",
+}
+
+
+@app.post("/api/voice/stt")
+async def voice_stt(
+    audio: UploadFile = File(...),
+    _user: dict = Depends(require_auth),
+):
+    """Ovoz → Matn (Muxlisa STT proxy). multipart/form-data, field: audio."""
+    if not MUXLISA_API_KEY:
+        raise HTTPException(503, "Ovoz xizmati sozlanmagan (MUXLISA_API_KEY yo'q)")
+
+    # MIME tekshiruv — "audio/webm;codecs=opus" → "audio/webm"
+    ctype = (audio.content_type or "audio/webm").lower().split(";")[0].strip()
+    if ctype not in _ALLOWED_AUDIO_MIMES:
+        raise HTTPException(400, f"Qo'llab-quvvatlanmagan format: {ctype}")
+
+    data = await audio.read()
+    if len(data) > _MAX_AUDIO_BYTES:
+        raise HTTPException(400, "Audio fayl 5 MB dan katta bo'lmasin")
+    if len(data) < 50:
+        raise HTTPException(400, "Audio fayl bo'sh yoki juda kichik")
+
+    ext      = _EXT_MAP.get(ctype, "webm")
+    filename = f"audio.{ext}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as cli:
+            resp = await cli.post(
+                f"{MUXLISA_BASE_URL}/stt",
+                headers={"x-api-key": MUXLISA_API_KEY},
+                files={"audio": (filename, data, ctype)},
+            )
+        if resp.status_code == 200:
+            return {"success": True, "text": resp.json().get("text", "")}
+        if resp.status_code == 402:
+            raise HTTPException(402, "Ovoz xizmati to'lovini yangilang")
+        if resp.status_code == 429:
+            raise HTTPException(429, "STT so'rovlar limiti oshdi — keyinroq urinib ko'ring")
+        log.error(f"Muxlisa STT {resp.status_code}: {resp.text[:200]}")
+        raise HTTPException(502, "STT xizmatida server xatosi")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "STT vaqt tugadi — qayta urinib ko'ring")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error(f"STT xatosi: {exc}")
+        raise HTTPException(502, "STT ga ulanishda xatolik")
+
+
+@app.post("/api/voice/tts")
+async def voice_tts(
+    req: TTSRequest,
+    _user: dict = Depends(require_auth),
+):
+    """Matn → Ovoz (Muxlisa TTS proxy). WAV binary stream qaytaradi."""
+    if not MUXLISA_API_KEY:
+        raise HTTPException(503, "Ovoz xizmati sozlanmagan (MUXLISA_API_KEY yo'q)")
+
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "Matn bo'sh bo'lmasin")
+
+    text    = text[:512]          # Muxlisa chegarasi
+    speaker = req.speaker if req.speaker in (0, 1) else 1
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as cli:
+            resp = await cli.post(
+                f"{MUXLISA_BASE_URL}/tts",
+                headers={"Content-Type": "application/json", "x-api-key": MUXLISA_API_KEY},
+                json={"text": text, "speaker": speaker},
+            )
+        if resp.status_code == 200:
+            return Response(
+                content=resp.content,
+                media_type="audio/wav",
+                headers={"Content-Disposition": "inline; filename=speech.wav"},
+            )
+        if resp.status_code == 402:
+            raise HTTPException(402, "Ovoz xizmati to'lovini yangilang")
+        if resp.status_code == 429:
+            raise HTTPException(429, "TTS so'rovlar limiti oshdi")
+        log.error(f"Muxlisa TTS {resp.status_code}: {resp.text[:200]}")
+        raise HTTPException(502, "TTS xizmatida server xatosi")
+    except httpx.TimeoutException:
+        raise HTTPException(504, "TTS vaqt tugadi")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error(f"TTS xatosi: {exc}")
+        raise HTTPException(502, "TTS ga ulanishda xatolik")
 
 
 # ═══════════════════════════════════════════════════════════════════════════

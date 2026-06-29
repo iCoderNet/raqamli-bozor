@@ -67,8 +67,13 @@ export const adminApi = {
 // ─── Agent API ────────────────────────────────────────────────────────────
 
 export const agentApi = {
-  chat: (messages) =>
-    api.post('/agent/chat', { messages }).then(r => r.data),
+  chat: (messages, { marketId, year, month } = {}) =>
+    api.post('/agent/chat', {
+      messages,
+      ...(marketId != null ? { market_id: String(marketId) } : {}),
+      ...(year     != null ? { year }                        : {}),
+      ...(month    != null ? { month }                       : {}),
+    }).then(r => r.data),
 }
 
 export default api
