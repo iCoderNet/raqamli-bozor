@@ -16,6 +16,9 @@ from contextlib import asynccontextmanager
 from typing import Optional, List, Any
 from datetime import date
 
+from dotenv import load_dotenv
+load_dotenv()   # .env faylini uvicorn va boshqa ishga tushirish usullarida ham o'qiydi
+
 import httpx
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
