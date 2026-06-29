@@ -8,6 +8,7 @@ v4.0 — Jahon Savdo Kompleksi (jahon.bozor.app) birlashtirildi.
 """
 
 import os
+import re
 import json
 import logging
 import asyncio
@@ -84,6 +85,114 @@ _ALLOWED_AUDIO_MIMES = {
     "video/webm",   # browser MediaRecorder ko'pincha shu tipni ishlatadi
 }
 _MAX_AUDIO_BYTES = 5 * 1024 * 1024   # 5 MB
+
+# ─── TTS: O'zbek raqam-so'z konvertori ────────────────────────────────────
+_UZ_ONES  = ['', 'bir', 'ikki', 'uch', "to'rt", 'besh', 'olti', 'yetti', 'sakkiz', "to'qqiz"]
+_UZ_TEENS = ["o'n", "o'n bir", "o'n ikki", "o'n uch", "o'n to'rt",
+             "o'n besh", "o'n olti", "o'n yetti", "o'n sakkiz", "o'n to'qqiz"]
+_UZ_TENS  = ['', "o'n", 'yigirma', "o'ttiz", 'qirq', 'ellik', 'oltmish', 'yetmish', 'sakson', "to'qson"]
+_TTS_MULTS = {
+    'ming': 1_000, 'mln': 1_000_000, 'million': 1_000_000,
+    'mlrd': 1_000_000_000, 'milliard': 1_000_000_000, 'trln': 1_000_000_000_000,
+}
+
+
+def _int_to_uz(n: int) -> str:
+    """Butun sonni o'zbek tilidagi so'zga o'giradi: 15900000 → "o'n besh million to'qqiz yuz ming"."""
+    if n == 0: return 'nol'
+    if n < 0:  return 'minus ' + _int_to_uz(-n)
+    if n < 10: return _UZ_ONES[n]
+    if n < 20: return _UZ_TEENS[n - 10]
+    if n < 100:
+        t, o = divmod(n, 10)
+        return _UZ_TENS[t] + (' ' + _UZ_ONES[o] if o else '')
+    if n < 1_000:
+        h, r = divmod(n, 100)
+        base = (_UZ_ONES[h] + ' ' if h > 1 else '') + 'yuz'
+        return base + (' ' + _int_to_uz(r) if r else '')
+    if n < 1_000_000:
+        t, r = divmod(n, 1_000)
+        base = _int_to_uz(t) + ' ming'
+        return base + (' ' + _int_to_uz(r) if r else '')
+    if n < 1_000_000_000:
+        m, r = divmod(n, 1_000_000)
+        base = _int_to_uz(m) + ' million'
+        return base + (' ' + _int_to_uz(r) if r else '')
+    b, r = divmod(n, 1_000_000_000)
+    base = _int_to_uz(b) + ' milliard'
+    return base + (' ' + _int_to_uz(r) if r else '')
+
+
+def _normalize_tts(raw: str) -> str:
+    """LLM javobini Muxlisa TTS uchun tayyorlaydi:
+    raqamlarni o'zbek so'zlariga, markdown/jadvallarni tozalaydi, 512 belgiga qisqartiradi."""
+    t = raw
+
+    # ── 1. Markdown va jadval ──────────────────────────────────────────────
+    t = re.sub(r'```[\s\S]*?```', '. ', t)                        # kod bloklari
+    t = re.sub(r'`[^`]*`', '', t)                                  # inline kod
+    t = re.sub(r'^\|[-:| ]+\|$', '', t, flags=re.MULTILINE)       # jadval ajratgich
+    t = re.sub(r'\|', ' ', t)                                      # jadval chegarasi
+    t = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', t)               # [link](url) → link
+    t = re.sub(r'!\[.*?\]\(.*?\)', '', t)                          # rasmlar
+    t = re.sub(r'[*#_~>]', '', t)                                  # bold, heading, blockquote
+
+    # ── 2. Bo'shliqli raqamlar: "1 500 000" → "1500000" ──────────────────
+    t = re.sub(
+        r'\b\d{1,3}(?:\s\d{3})+\b',
+        lambda m: m.group(0).replace(' ', ''),
+        t
+    )
+
+    # ── 3. "98.2 mln" / "15 mlrd" / "500 ming" → so'zlar ─────────────────
+    def _expand_unit(m: re.Match) -> str:
+        try:
+            val  = float(m.group(1).replace(',', '.'))
+            mult = _TTS_MULTS.get(m.group(2).lower(), 1)
+            return _int_to_uz(round(val * mult))
+        except Exception:
+            return m.group(0)
+
+    t = re.sub(
+        r'(\d+(?:[.,]\d+)?)\s*(mln|million|mlrd|milliard|ming|trln)\b',
+        _expand_unit, t, flags=re.IGNORECASE,
+    )
+
+    # ── 4. Qolgan kasr raqamlar: "98.5" → "to'qson sakkiz nuqta besh" ─────
+    def _expand_decimal(m: re.Match) -> str:
+        try:
+            i_str, f_str = m.group(0).split('.')
+            i_word = _int_to_uz(int(i_str))
+            f_word = ' '.join(_int_to_uz(int(d)) for d in f_str if d.isdigit())
+            return i_word + (' nuqta ' + f_word if f_word else '')
+        except Exception:
+            return m.group(0)
+
+    t = re.sub(r'\b\d+\.\d+\b', _expand_decimal, t)
+
+    # ── 5. Katta butun raqamlar 4+ xona → so'zlar ─────────────────────────
+    t = re.sub(r'\b\d{4,}\b', lambda m: _int_to_uz(int(m.group(0))), t)
+
+    # ── 6. Abbreviaturalar ─────────────────────────────────────────────────
+    t = re.sub(r'\bUZS\b', "so'm", t, flags=re.IGNORECASE)
+    t = re.sub(r'(\d)\s*%', lambda m: m.group(1) + ' foiz', t)
+    t = re.sub(r'%', ' foiz', t)
+    t = re.sub(r'№', 'raqam ', t)
+
+    # ── 7. Qatorlar va ortiqcha bo'shliqlar ───────────────────────────────
+    t = re.sub(r'\n{2,}', '. ', t)
+    t = re.sub(r'\n', ' ', t)
+    t = re.sub(r'\.{2,}', '.', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+
+    # ── 8. 512 belgiga so'z chegarasida qisqartirish ───────────────────────
+    if len(t) > 500:
+        cut = t[:500]
+        last = max(cut.rfind('. '), cut.rfind(', '), cut.rfind(' '))
+        t = (cut[:last] if last > 350 else cut).rstrip(' .,')
+
+    return t
+
 
 # ─── Raqamli Bozor Bearer token cache ─────────────────────────────────────
 _bazaar_token: dict = {"access": None}
@@ -1057,12 +1166,12 @@ async def voice_tts(
     if not MUXLISA_API_KEY:
         raise HTTPException(503, "Ovoz xizmati sozlanmagan (MUXLISA_API_KEY yo'q)")
 
-    text = req.text.strip()
+    text = _normalize_tts(req.text)
     if not text:
         raise HTTPException(400, "Matn bo'sh bo'lmasin")
 
-    text    = text[:512]          # Muxlisa chegarasi
     speaker = req.speaker if req.speaker in (0, 1) else 1
+    log.info(f"TTS: {len(req.text)}→{len(text)} chars | '{text[:80]}'...")
 
     try:
         async with httpx.AsyncClient(timeout=30) as cli:

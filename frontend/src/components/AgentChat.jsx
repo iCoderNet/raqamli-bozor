@@ -151,14 +151,13 @@ async function doSTT(blob) {
 }
 
 async function doTTS(rawText) {
-  // markdown va kod bloklarini tozalash
+  // Asosiy tozalash — backend qolgan hamma narsani (raqamlar, jadvallar) o'zi normallashtiradi
   const text = rawText
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[*#`_~>]/g, '')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 512)
+    .slice(0, 2000)   // backend 512 belgiga so'z chegarasida qisqartiradi
   const { data } = await api.post('/voice/tts', { text, speaker: 1 }, { responseType: 'blob' })
   return URL.createObjectURL(data)
 }
