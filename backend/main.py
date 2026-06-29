@@ -137,11 +137,29 @@ def _normalize_tts(raw: str) -> str:
     t = re.sub(r'!\[.*?\]\(.*?\)', '', t)                          # rasmlar
     t = re.sub(r'[*#_~>]', '', t)                                  # bold, heading, blockquote
 
-    # ── 2. Bo'shliqli raqamlar: "1 500 000" → "1500000" ──────────────────
+    # ── 2. Bo'shliqli raqamlar, ixtiyoriy kasr bilan ─────────────────────
+    # "4 151 541 314,57" yoki "1 500 000" → to'g'ridan-to'g'ri so'zlarga
+    def _merge_spaced(m: re.Match) -> str:
+        full = m.group(0)
+        for sep in (',', '.'):
+            if sep in full:
+                int_raw, dec_raw = full.split(sep, 1)
+                int_str = int_raw.replace(' ', '')
+                try:
+                    iw = _int_to_uz(int(int_str))
+                    dw = ' '.join(_int_to_uz(int(d)) for d in dec_raw if d.isdigit())
+                    return iw + (' nuqta ' + dw if dw else '')
+                except Exception:
+                    return full.replace(' ', '')
+        # Kasr yo'q — oddiy merge
+        try:
+            return _int_to_uz(int(full.replace(' ', '')))
+        except Exception:
+            return full.replace(' ', '')
+
     t = re.sub(
-        r'\b\d{1,3}(?:\s\d{3})+\b',
-        lambda m: m.group(0).replace(' ', ''),
-        t
+        r'\b\d{1,3}(?:\s\d{3})+(?:[,.]\d+)?\b',
+        _merge_spaced, t,
     )
 
     # ── 3. "98.2 mln" / "15 mlrd" / "500 ming" → so'zlar ─────────────────
@@ -158,17 +176,19 @@ def _normalize_tts(raw: str) -> str:
         _expand_unit, t, flags=re.IGNORECASE,
     )
 
-    # ── 4. Qolgan kasr raqamlar: "98.5" → "to'qson sakkiz nuqta besh" ─────
+    # ── 4. Vergul/nuqtali kasr raqamlar: "4151.57" yoki "4151,57" ─────────
     def _expand_decimal(m: re.Match) -> str:
         try:
-            i_str, f_str = m.group(0).split('.')
-            i_word = _int_to_uz(int(i_str))
-            f_word = ' '.join(_int_to_uz(int(d)) for d in f_str if d.isdigit())
-            return i_word + (' nuqta ' + f_word if f_word else '')
+            raw = m.group(0)
+            sep = ',' if ',' in raw else '.'
+            i_str, f_str = raw.split(sep, 1)
+            iw = _int_to_uz(int(i_str))
+            dw = ' '.join(_int_to_uz(int(d)) for d in f_str if d.isdigit())
+            return iw + (' nuqta ' + dw if dw else '')
         except Exception:
             return m.group(0)
 
-    t = re.sub(r'\b\d+\.\d+\b', _expand_decimal, t)
+    t = re.sub(r'\b\d+[.,]\d+\b', _expand_decimal, t)
 
     # ── 5. Katta butun raqamlar 4+ xona → so'zlar ─────────────────────────
     t = re.sub(r'\b\d{4,}\b', lambda m: _int_to_uz(int(m.group(0))), t)
