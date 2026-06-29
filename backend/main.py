@@ -11,6 +11,7 @@ import os
 import json
 import logging
 import asyncio
+import tempfile
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional, List, Any
@@ -960,6 +961,40 @@ _EXT_MAP = {
 }
 
 
+async def _to_wav(data: bytes, in_ext: str) -> bytes:
+    """ffmpeg orqali har qanday audio formatni 16kHz mono PCM WAV ga o'giradi.
+    ffmpeg mavjud bo'lmasa yoki xato bo'lsa, asl datani qaytaradi."""
+    tmp_in = tmp_out = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f".{in_ext}", delete=False) as f:
+            f.write(data)
+            tmp_in = f.name
+        tmp_out = tmp_in.rsplit(".", 1)[0] + ".wav"
+
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", tmp_in,
+            "-ar", "16000", "-ac", "1", "-f", "wav", tmp_out,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+
+        if proc.returncode == 0:
+            wav_data = Path(tmp_out).read_bytes()
+            log.info(f"ffmpeg konvert: {len(data)}B {in_ext} → {len(wav_data)}B wav")
+            return wav_data
+    except FileNotFoundError:
+        log.warning("ffmpeg topilmadi — asl audio yuborilmoqda")
+    except Exception as e:
+        log.warning(f"ffmpeg xatosi: {e} — asl audio yuborilmoqda")
+    finally:
+        for p in (tmp_in, tmp_out):
+            if p:
+                try: Path(p).unlink()
+                except: pass
+    return data   # fallback: asl data
+
+
 @app.post("/api/voice/stt")
 async def voice_stt(
     audio: UploadFile = File(...),
@@ -980,31 +1015,37 @@ async def voice_stt(
     if len(data) < 50:
         raise HTTPException(400, "Audio fayl bo'sh yoki juda kichik")
 
-    ext      = _EXT_MAP.get(ctype, "webm")
-    filename = f"audio.{ext}"
+    # Har qanday formatni → 16kHz mono WAV ga konvert qilish
+    in_ext   = _EXT_MAP.get(ctype, "webm")
+    wav_data = await _to_wav(data, in_ext)
+    send_data  = wav_data
+    send_ctype = "audio/wav"
+    filename   = "audio.wav"
 
     try:
         async with httpx.AsyncClient(timeout=30) as cli:
             resp = await cli.post(
                 f"{MUXLISA_BASE_URL}/stt",
                 headers={"x-api-key": MUXLISA_API_KEY},
-                files={"audio": (filename, data, ctype)},
+                files={"audio": (filename, send_data, send_ctype)},
             )
+        log.info(f"Muxlisa STT → {resp.status_code} | wav={len(send_data)}B | orig={len(data)}B {ctype}")
         if resp.status_code == 200:
             return {"success": True, "text": resp.json().get("text", "")}
         if resp.status_code == 402:
             raise HTTPException(402, "Ovoz xizmati to'lovini yangilang")
         if resp.status_code == 429:
             raise HTTPException(429, "STT so'rovlar limiti oshdi — keyinroq urinib ko'ring")
-        log.error(f"Muxlisa STT {resp.status_code}: {resp.text[:200]}")
-        raise HTTPException(502, "STT xizmatida server xatosi")
+        err_body = resp.text[:300]
+        log.error(f"Muxlisa STT {resp.status_code}: {err_body}")
+        raise HTTPException(502, f"STT xatosi ({resp.status_code}): {err_body}")
     except httpx.TimeoutException:
         raise HTTPException(504, "STT vaqt tugadi — qayta urinib ko'ring")
     except HTTPException:
         raise
     except Exception as exc:
         log.error(f"STT xatosi: {exc}")
-        raise HTTPException(502, "STT ga ulanishda xatolik")
+        raise HTTPException(502, f"STT ulanish xatosi: {exc}")
 
 
 @app.post("/api/voice/tts")
